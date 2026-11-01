@@ -1,0 +1,58 @@
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  # --- file hygiene ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]   # keeps datasets and parquet files out of git
+
+  # --- lint + format ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff               # newer releases name this "ruff-check"
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # --- keep uv.lock in sync with pyproject.toml ---
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.5.0
+    hooks:
+      - id: uv-lock
+
+  # --- secrets (API keys end up here eventually) ---
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks git --pre-commit --staged --redact
+        language: system
+        pass_filenames: false
+
+  # --- local hooks that run inside your uv environment ---
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        files: ^dq_copilot/
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (fast, no LLM)
+        entry: uv run pytest -m "not llm" -q --no-cov -x
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
