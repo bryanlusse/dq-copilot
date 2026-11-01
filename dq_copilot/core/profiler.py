@@ -1,6 +1,10 @@
+from decimal import Decimal
+from typing import Any
+
+import duckdb
 from pydantic import BaseModel
 
-from dq_copilot.core.source import DataSource, quote_ident
+from dq_copilot.core.source import DataSource, quote_ident, scalar_int
 
 
 class ColumnProfile(BaseModel):
@@ -29,7 +33,7 @@ class Profile(BaseModel):
     columns: dict[str, ColumnProfile]
 
 
-def _fetch_dicts(con, sql: str) -> list[dict]:
+def _fetch_dicts(con: duckdb.DuckDBPyConnection, sql: str) -> list[dict[str, Any]]:
     cur = con.execute(sql)
     names = [d[0] for d in cur.description]
     return [dict(zip(names, row, strict=False)) for row in cur.fetchall()]
@@ -68,22 +72,22 @@ def _kind(dtype: str) -> str:
     return "other"
 
 
-def _num(x) -> float | None:
+def _num(x: object) -> float | None:
     """SUMMARIZE returns most stats as text, so convert safely."""
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return None
+    if isinstance(x, int | float | str | Decimal):
+        try:
+            return float(x)
+        except ValueError:
+            return None
+    return None
 
 
 def profile(src: DataSource) -> Profile:
     v = quote_ident(src.view)
 
     # table-level
-    row_count = src.con.execute(f"SELECT count(*) FROM {v}").fetchone()[0]
-    distinct_rows = src.con.execute(
-        f"SELECT count(*) FROM (SELECT DISTINCT * FROM {v})"
-    ).fetchone()[0]
+    row_count = scalar_int(src.con, f"SELECT count(*) FROM {v}")
+    distinct_rows = scalar_int(src.con, f"SELECT count(*) FROM (SELECT DISTINCT * FROM {v})")
     duplicate_rows = row_count - distinct_rows
 
     # SUMMARIZE: base stats for every column, keyed by column name
